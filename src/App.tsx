@@ -1,13 +1,9 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Navbar } from './components/Navbar';
-import { HeroSection } from './components/HeroSection';
-import { CategoryFilterBar } from './components/CategoryFilterBar';
 import { KolkataMap } from './components/KolkataMap';
-import { LocationCard } from './components/LocationCard';
-import { ComparisonModal } from './components/ComparisonModal';
+import { RightPanel } from './components/RightPanel';
 import { ReportWaitModal } from './components/ReportWaitModal';
 import { WhyEstimateModal } from './components/WhyEstimateModal';
-import { TimeTravelController } from './components/TimeTravelController';
 import { FutureVisionModal } from './components/FutureVisionModal';
 
 import { INITIAL_KOLKATA_LOCATIONS } from './data/kolkataLocations';
@@ -24,40 +20,44 @@ import {
   PredictionBreakdown,
   ObservationRecord 
 } from './types';
+import { MapPin, List, Sparkles } from 'lucide-react';
 
 export function App() {
-  // State
+  // Core State
   const [locations, setLocations] = useState<LocationItem[]>(INITIAL_KOLKATA_LOCATIONS);
   const [observations, setObservations] = useState<ObservationRecord[]>([]);
   const [userOrigin, setUserOrigin] = useState<UserOrigin>(POPULAR_ORIGINS[0]); // Park Street default
   const [selectedCategory, setSelectedCategory] = useState<CategoryType>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [activeSort, setActiveSort] = useState<SortFilterOption>('fastest_total');
-  const [selectedLocationId, setSelectedLocationId] = useState<string | null>('gov-kasba-rto'); // Kasba RTO default for instant demo
   
-  // Time simulation (Defaults to 15:00 = 3 PM Tuesday as highlighted in prompt example)
-  const [simulatedHour, setSimulatedHour] = useState<number>(15);
-  const [isLiveTime, setIsLiveTime] = useState<boolean>(false);
+  // Section 3: "Fastest overall" should be the default because this is GhostQueue's differentiating feature
+  const [activeSort, setActiveSort] = useState<SortFilterOption>('fastest_total');
+  
+  // Default selected location for immediate demonstration (Kasba RTO)
+  const [selectedLocationId, setSelectedLocationId] = useState<string | null>('gov-kasba-rto');
+  
+  // Time simulation
+  const [simulatedHour, setSimulatedHour] = useState<number>(15); // 3 PM Tuesday
 
-  // Modal states
-  const [isCompareOpen, setIsCompareOpen] = useState<boolean>(false);
+  // Mobile View Toggle ('map' | 'panel')
+  const [mobileView, setMobileView] = useState<'map' | 'panel'>('map');
+
+  // Modals
   const [isReportOpen, setIsReportOpen] = useState<boolean>(false);
   const [isWhyEstimateOpen, setIsWhyEstimateOpen] = useState<boolean>(false);
   const [isHowItWorksOpen, setIsHowItWorksOpen] = useState<boolean>(false);
   const [isFutureVisionOpen, setIsFutureVisionOpen] = useState<boolean>(false);
-
   const [activeModalLocation, setActiveModalLocation] = useState<LocationWithTravel | null>(null);
 
-  // Load stored community observations from localStorage on mount
+  // Load stored community observations from localStorage
   useEffect(() => {
     const stored = getStoredObservations();
     setObservations(stored);
   }, []);
 
-  // Enrich all locations with dynamic wait calculations and travel times
+  // Enrich all locations with dynamic wait estimates & travel calculations
   const enrichedLocations: LocationWithTravel[] = useMemo(() => {
     return locations.map((loc) => {
-      // Run transparent prediction engine calculation
       const prediction = calculatePredictedWait(loc, observations, simulatedHour, 2);
       
       const updatedLoc: LocationItem = {
@@ -92,15 +92,10 @@ export function App() {
         }
       }
 
-      // Open now filter
-      if (activeSort === 'open_now' && item.status !== 'open') {
-        return false;
-      }
-
       return true;
     });
 
-    // Sorting
+    // Sort order
     result.sort((a, b) => {
       if (activeSort === 'fastest_total') {
         return a.totalTimeMinutes - b.totalTimeMinutes;
@@ -126,14 +121,13 @@ export function App() {
     return enrichedLocations.find((l) => l.id === selectedLocationId) || null;
   }, [selectedLocationId, enrichedLocations]);
 
-  // Generate Comparison Data
+  // Comparison Data for currently selected location
   const comparisonData: ComparisonData | null = useMemo(() => {
-    const target = activeModalLocation || selectedLocation;
-    if (!target) return null;
-    return generateComparison(target, enrichedLocations);
-  }, [activeModalLocation, selectedLocation, enrichedLocations]);
+    if (!selectedLocation) return null;
+    return generateComparison(selectedLocation, enrichedLocations);
+  }, [selectedLocation, enrichedLocations]);
 
-  // Generate Prediction Breakdown
+  // Prediction Breakdown for explainability
   const predictionBreakdown: PredictionBreakdown | null = useMemo(() => {
     const target = activeModalLocation || selectedLocation;
     if (!target) return null;
@@ -160,10 +154,8 @@ export function App() {
       note,
     });
 
-    // Update observations state
     setObservations((prev) => [newRecord, ...prev]);
 
-    // Update the specific location's observations count and last updated timestamp in state
     setLocations((prev) =>
       prev.map((loc) => {
         if (loc.id === locationId) {
@@ -180,123 +172,88 @@ export function App() {
     );
   };
 
-  const handleResetLive = () => {
-    const nowHour = new Date().getHours();
-    setSimulatedHour(nowHour);
-    setIsLiveTime(true);
-  };
-
-  const handleHourChange = (newHour: number) => {
-    setSimulatedHour(newHour);
-    setIsLiveTime(false);
-  };
-
   return (
-    <div className="min-h-screen flex flex-col bg-cream-100 text-charcoal-800 font-sans selection:bg-lavender-200">
-      {/* 1. Global Navigation Bar */}
+    <div className="h-screen w-screen flex flex-col bg-[#FAF8F5] text-charcoal-800 font-sans overflow-hidden">
+      {/* 1. COMPACT FUNCTIONAL NAVBAR (No giant hero section!) */}
       <Navbar
         currentOrigin={userOrigin}
         onSelectOrigin={setUserOrigin}
-        onOpenHowItWorks={() => setIsHowItWorksOpen(true)}
-        onOpenFutureVision={() => setIsFutureVisionOpen(true)}
-        totalLocationsCount={locations.length}
-      />
-
-      {/* 2. Landing Hero Section */}
-      <HeroSection
-        onExploreMap={() => {
-          const mapEl = document.getElementById('kolkata-map-section');
-          mapEl?.scrollIntoView({ behavior: 'smooth' });
-        }}
-        onOpenHowItWorks={() => setIsHowItWorksOpen(true)}
-        onSelectQuickSearch={(q) => setSearchQuery(q)}
-      />
-
-      {/* 3. Category & Filter Controls */}
-      <CategoryFilterBar
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
         selectedCategory={selectedCategory}
         onCategoryChange={setSelectedCategory}
         activeSort={activeSort}
         onSortChange={setActiveSort}
-        totalFilteredCount={filteredLocations.length}
+        totalCount={filteredLocations.length}
+        simulatedHour={simulatedHour}
+        onHourChange={setSimulatedHour}
+        onOpenHowItWorks={() => setIsHowItWorksOpen(true)}
+        onOpenFutureVision={() => setIsFutureVisionOpen(true)}
       />
 
-      {/* 4. Main Map & Intelligence Section */}
-      <main id="kolkata-map-section" className="flex-1 flex flex-col relative min-h-[580px] lg:min-h-[640px]">
-        {/* Full-width Kolkata Map */}
-        <div className="w-full h-full min-h-[580px] lg:min-h-[640px] relative">
+      {/* 2. MAP-FIRST MAIN WORKSPACE (Desktop: Map Left, Panel Right) */}
+      <div className="flex-1 flex flex-col lg:flex-row relative min-h-0 w-full overflow-hidden">
+        {/* LEFT / MAIN: Real Interactive Kolkata Leaflet Map */}
+        <div className={`flex-1 h-full min-h-0 relative ${mobileView === 'panel' ? 'hidden lg:block' : 'block'}`}>
           <KolkataMap
             locations={filteredLocations}
             selectedLocation={selectedLocation}
-            onSelectLocation={(loc) => setSelectedLocationId(loc.id)}
+            onSelectLocation={(loc) => {
+              setSelectedLocationId(loc.id);
+              setMobileView('panel');
+            }}
             userOrigin={userOrigin}
             onMapClickOrigin={setUserOrigin}
           />
-
-          {/* Floating Time Travel Controller (Top Center of Map) */}
-          <div className="absolute top-4 left-4 right-16 sm:right-auto sm:left-6 z-10 max-w-sm sm:max-w-md">
-            <TimeTravelController
-              simulatedHour={simulatedHour}
-              onHourChange={handleHourChange}
-              onResetLive={handleResetLive}
-              isLive={isLiveTime}
-            />
-          </div>
-
-          {/* Floating Selected Location Card (Desktop: Top Right, Mobile: Bottom Overlay) */}
-          {selectedLocation && (
-            <div className="absolute z-20 right-4 top-20 sm:top-4 bottom-4 sm:bottom-auto max-h-[88%] sm:max-h-[82vh] overflow-y-auto w-[calc(100%-32px)] sm:w-auto">
-              <LocationCard
-                location={selectedLocation}
-                onClose={() => setSelectedLocationId(null)}
-                onOpenCompare={(loc) => {
-                  setActiveModalLocation(loc);
-                  setIsCompareOpen(true);
-                }}
-                onOpenReport={(loc) => {
-                  setActiveModalLocation(loc);
-                  setIsReportOpen(true);
-                }}
-                onOpenWhyEstimate={(loc) => {
-                  setActiveModalLocation(loc);
-                  setIsWhyEstimateOpen(true);
-                }}
-                simulatedHour={simulatedHour}
-              />
-            </div>
-          )}
         </div>
-      </main>
 
-      {/* Footer info bar */}
-      <footer className="bg-cream-200/80 border-t border-lavender-100 py-2.5 px-4 text-center text-xs text-charcoal-500">
-        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
-          <span>
-            <strong>GhostQueue</strong> — Kolkata's Waiting-Time Intelligence Layer. Built for urban decision making.
-          </span>
-          <div className="flex items-center gap-3 text-[11px] text-charcoal-400">
-            <span>Seeded with 100+ Kolkata Hubs</span>
-            <span>•</span>
-            <button 
-              onClick={() => setIsFutureVisionOpen(true)}
-              className="hover:text-lavender-700 underline underline-offset-2"
-            >
-              City-Wide Waiting Architecture
-            </button>
-          </div>
+        {/* RIGHT: Compact Intelligent Panel (Search results / Selected location / Comparison) */}
+        <div className={`w-full lg:w-[420px] xl:w-[460px] h-full shrink-0 shadow-soft-lg z-20 ${mobileView === 'map' ? 'hidden lg:block' : 'block'}`}>
+          <RightPanel
+            selectedLocation={selectedLocation}
+            onClearSelectedLocation={() => setSelectedLocationId(null)}
+            locations={filteredLocations}
+            onSelectLocation={(loc) => {
+              setSelectedLocationId(loc.id);
+              setMobileView('panel');
+            }}
+            onOpenReport={(loc) => {
+              setActiveModalLocation(loc);
+              setIsReportOpen(true);
+            }}
+            onOpenWhyEstimate={(loc) => {
+              setActiveModalLocation(loc);
+              setIsWhyEstimateOpen(true);
+            }}
+            activeSort={activeSort}
+            onSortChange={setActiveSort}
+            simulatedHour={simulatedHour}
+            comparisonData={comparisonData}
+          />
         </div>
-      </footer>
 
-      {/* Modals */}
-      <ComparisonModal
-        isOpen={isCompareOpen}
-        onClose={() => setIsCompareOpen(false)}
-        data={comparisonData}
-        onSelectCandidate={(cand) => setSelectedLocationId(cand.id)}
-      />
+        {/* Mobile Floating View Switcher Button */}
+        <div className="lg:hidden absolute bottom-5 left-1/2 -translate-x-1/2 z-30">
+          <button
+            onClick={() => setMobileView(mobileView === 'map' ? 'panel' : 'map')}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-full bg-charcoal-900 text-white font-bold text-xs shadow-soft-xl"
+          >
+            {mobileView === 'map' ? (
+              <>
+                <List className="w-4 h-4 text-lavender-300" />
+                <span>View Locations List</span>
+              </>
+            ) : (
+              <>
+                <MapPin className="w-4 h-4 text-emerald-400" />
+                <span>View Kolkata Map</span>
+              </>
+            )}
+          </button>
+        </div>
+      </div>
 
+      {/* MODALS */}
       <ReportWaitModal
         isOpen={isReportOpen}
         onClose={() => setIsReportOpen(false)}
